@@ -5,37 +5,13 @@
 # Licensed under the MIT License. See License.txt in the project root for
 # license information.
 #--------------------------------------------------------------------------
-
-
-# TEST SCENARIO COVERAGE
-# ----------------------
-# Methods Total   : 52
-# Methods Covered : 52
-# Examples Total  : 55
-# Examples Tested : 55
-# Coverage %      : 100
-# ----------------------
-
-# current methods coverage:
-#   blob_containers: 13/13
-#   blob_services:  3/3
-#   encryption_scopes:  4/4
-#   file_services: 3/3
-#   file_shares:  5/5
-#   management_policies:  3/3
-#   operations:  1/1
-#   object_replication_policies_operations: 0/4
-#   private_endpoint_connections:  3/3
-#   private_link_resources:  1/1
-#   skus:  1/1
-#   storage_accounts:  10/14
-#   usages:  1/1
-
 import datetime as dt
 import unittest
 
-import azure.mgmt.storage as az_storage
+import azure.mgmt.storage.aio as az_storage_aio
 from devtools_testutils import AzureMgmtTestCase, ResourceGroupPreparer
+
+from _aio_testcase import AzureMgmtAsyncTestCase
 
 AZURE_LOCATION = 'westeurope'
 ZERO = dt.timedelta(0)
@@ -52,12 +28,12 @@ class UTC(dt.tzinfo):
     def dst(self, dt):
         return ZERO
 
-class MgmtStorageTest(AzureMgmtTestCase):
+class MgmtStorageTest(AzureMgmtAsyncTestCase):
 
     def setUp(self):
         super(MgmtStorageTest, self).setUp()
-        self.mgmt_client = self.create_mgmt_client(
-            az_storage.StorageManagementClient
+        self.mgmt_client = self.create_mgmt_aio_client(
+            az_storage_aio.StorageManagementClient
         )
 
         if self.is_live:
@@ -102,7 +78,6 @@ class MgmtStorageTest(AzureMgmtTestCase):
                 "privateLinkServiceConnections": [
                   {
                     "name": "myconnection",
-                    # "private_link_service_id": "/subscriptions/" + self.settings.SUBSCRIPTION_ID + "/resourceGroups/" + group_name + "/providers/Microsoft.Storage/storageAccounts/" + STORAGE_ACCOUNT_NAME + ""
                     "private_link_service_id": resource_id,
                     "group_ids": ["blob"]
                   }
@@ -117,6 +92,7 @@ class MgmtStorageTest(AzureMgmtTestCase):
             return result.result().id
         else:
             return "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" + group_name + "/providers/Microsoft.Network/privateEndpoints/" + endpoint_name
+        
 
     @ResourceGroupPreparer(location=AZURE_LOCATION)
     def test_storage(self, resource_group):
@@ -124,7 +100,6 @@ class MgmtStorageTest(AzureMgmtTestCase):
         SUBSCRIPTION_ID = self.settings.SUBSCRIPTION_ID
         RESOURCE_GROUP = resource_group.name
         STORAGE_ACCOUNT_NAME = "storageaccountxxyyzzn"  # TODO: need change a random name, if need run live test again.
-        DEST_STORAGE_ACCOUNT_NAME = "storageaccountxxyyzznnx"
         FILE_SERVICE_NAME = "fileservicexxyyzz"
         SHARE_NAME = "filesharenamexxyyzz"
         BLOB_SERVICE_NAME = "blobservicexxyyzz"
@@ -139,7 +114,6 @@ class MgmtStorageTest(AzureMgmtTestCase):
         PROBES = "probe123"
         PRIVATE_ENDPOINT = "endpoint123xxx"
         PRIVATE_ENDPOINT_CONNECTION_NAME = "privateEndpointConnection"
-        OBJECT_REPLICATION_POLICY_NAME = "default"
 
         # StorageAccountCreate[put]
         BODY = {
@@ -148,14 +122,6 @@ class MgmtStorageTest(AzureMgmtTestCase):
           },
           "kind": "StorageV2",  # Storage v2 support policy
           "location": "westeurope",
-          # TODO: The value 'True' is not allowed for property isHnsEnabled
-          # "is_hns_enabled": True,
-          # TODO:Unsupport
-          # "routing_preference": {
-          #   "routing_choice": "MicrosoftRouting",
-          #   "publish_microsoft_endpoints": True,
-          #   "publish_internet_endpoints": True
-          # },
           "encryption": {
             "services": {
               "file": {
@@ -174,20 +140,12 @@ class MgmtStorageTest(AzureMgmtTestCase):
             "key2": "value2"
           }
         }
-        result = self.mgmt_client.storage_accounts.begin_create(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
-        storageaccount = result.result()
-
-        # Create destination storage account
-        # result = self.mgmt_client.storage_accounts.begin_create(resource_group.name, DEST_STORAGE_ACCOUNT_NAME, BODY)
-
-        # TODO: [Kaihui] feature is unavailable
-        # Create object replication policy
-        # BODY = {
-        #   "source_account": STORAGE_ACCOUNT_NAME,
-        #   "destination_account": DEST_STORAGE_ACCOUNT_NAME,
-        #   "rules": []
-        # }
-        # result = self.mgmt_client.object_replication_policies.create_or_update(resource_group.name, STORAGE_ACCOUNT_NAME, OBJECT_REPLICATION_POLICY_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.begin_create(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
+        )
+        storageaccount = self.event_loop.run_until_complete(
+            result.result()
+        )
 
         self.create_endpoint(
           resource_group.name,
@@ -262,7 +220,9 @@ class MgmtStorageTest(AzureMgmtTestCase):
             ]
           }
         }
-        result = self.mgmt_client.file_services.set_service_properties(resource_group.name, STORAGE_ACCOUNT_NAME, BODY["cors"])
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.file_services.set_service_properties(resource_group.name, STORAGE_ACCOUNT_NAME, BODY["cors"])
+        )
 
         # PutBlobServices[put]
         BODY = {
@@ -331,21 +291,20 @@ class MgmtStorageTest(AzureMgmtTestCase):
           "delete_retention_policy": {
             "enabled": True,
             "days": "300"
-          },
-          # "is_versioning_enabled": True,
-          # TODO: unsupport
-          # "change_feed": {
-          #   "enabled": True
-          # }
+          }
         }
-        result = self.mgmt_client.blob_services.set_service_properties(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_services.set_service_properties(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
+        )
 
         # StorageAccountPutEncryptionScope[put]
         BODY = {
           "source": "Microsoft.Storage",
           "state": "Enabled"
         }
-        result = self.mgmt_client.encryption_scopes.put(resource_group.name, STORAGE_ACCOUNT_NAME, ENCRYPTION_SCOPE_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.encryption_scopes.put(resource_group.name, STORAGE_ACCOUNT_NAME, ENCRYPTION_SCOPE_NAME, BODY)
+        )
 
         MANAGEMENT_POLICY_NAME = "managementPolicy"
         # StorageAccountSetManagementPolicies[put]
@@ -388,13 +347,19 @@ class MgmtStorageTest(AzureMgmtTestCase):
             ]
           }
         }
-        result = self.mgmt_client.management_policies.create_or_update(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.management_policies.create_or_update(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
+        )
 
         # PutShares[put]
-        result = self.mgmt_client.file_shares.create(resource_group.name, STORAGE_ACCOUNT_NAME, SHARE_NAME, {})
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.file_shares.create(resource_group.name, STORAGE_ACCOUNT_NAME, SHARE_NAME, {})
+        )
 
         # StorageAccountGetProperties[get]
-        storageaccount = self.mgmt_client.storage_accounts.get_properties(resource_group.name, STORAGE_ACCOUNT_NAME)
+        storageaccount = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.get_properties(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # PRIVATE_ENDPOINT_CONNECTION_NAME = "privateEndpointConnection"
         PRIVATE_ENDPOINT_CONNECTION_NAME = storageaccount.private_endpoint_connections[0].name
@@ -406,106 +371,150 @@ class MgmtStorageTest(AzureMgmtTestCase):
             "description": "Auto-Approved"
           }
         }
-        result = self.mgmt_client.private_endpoint_connections.put(resource_group.name, STORAGE_ACCOUNT_NAME, PRIVATE_ENDPOINT_CONNECTION_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.private_endpoint_connections.put(resource_group.name, STORAGE_ACCOUNT_NAME, PRIVATE_ENDPOINT_CONNECTION_NAME, BODY)
+        )
 
         # PutContainers[put]
-        result = self.mgmt_client.blob_containers.create(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, {})
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.create(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, {})
+        )
 
         # CreateOrUpdateImmutabilityPolicy[put]
         BODY = {
           "immutability_period_since_creation_in_days": "3",
           "allow_protected_append_writes": True
         }
-        result = self.mgmt_client.blob_containers.create_or_update_immutability_policy(
-          resource_group.name,
-          STORAGE_ACCOUNT_NAME,
-          CONTAINER_NAME,
-          parameters=BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.create_or_update_immutability_policy(
+                resource_group.name,
+                STORAGE_ACCOUNT_NAME,
+                CONTAINER_NAME,
+                parameters=BODY)
+        )
         ETAG = result.etag
 
         # DeleteImmutabilityPolicy[delete]
-        result = self.mgmt_client.blob_containers.delete_immutability_policy(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, ETAG)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.delete_immutability_policy(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, ETAG)
+        )
 
         # CreateOrUpdateImmutabilityPolicy[put] again
         BODY = {
           "immutability_period_since_creation_in_days": "3",
           "allow_protected_append_writes": True
         }
-        result = self.mgmt_client.blob_containers.create_or_update_immutability_policy(
-          resource_group.name,
-          STORAGE_ACCOUNT_NAME,
-          CONTAINER_NAME,
-          parameters=BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.create_or_update_immutability_policy(
+              resource_group.name,
+              STORAGE_ACCOUNT_NAME,
+              CONTAINER_NAME,
+              parameters=BODY)
+        )
         ETAG = result.etag
 
-        # TODO: [Kaihui] feature is unavailable
-        # Get object replication policy
-        # result = self.mgmt_client.object_replication_policies.get(resource_group.name, STORAGE_ACCOUNT_NAME, OBJECT_REPLICATION_POLICY_NAME)
-
         # GetImmutabilityPolicy[get]
-        result = self.mgmt_client.blob_containers.get_immutability_policy(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.get_immutability_policy(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME)
+        )
 
         # GetContainers[get]
-        result = self.mgmt_client.blob_containers.get(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.get(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME)
+        )
 
         # StorageAccountGetPrivateEndpointConnection[get]
-        result = self.mgmt_client.private_endpoint_connections.get(resource_group.name, STORAGE_ACCOUNT_NAME, PRIVATE_ENDPOINT_CONNECTION_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.private_endpoint_connections.get(resource_group.name, STORAGE_ACCOUNT_NAME, PRIVATE_ENDPOINT_CONNECTION_NAME)
+        )
 
         # GetShares[get]
-        result = self.mgmt_client.file_shares.get(resource_group.name, STORAGE_ACCOUNT_NAME, SHARE_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.file_shares.get(resource_group.name, STORAGE_ACCOUNT_NAME, SHARE_NAME)
+        )
 
         # StorageAccountGetManagementPolicies[get]
-        result = self.mgmt_client.management_policies.get(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.management_policies.get(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # ListContainers[get]
-        result = self.mgmt_client.blob_containers.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.to_list(
+            self.mgmt_client.blob_containers.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
-        # StorageAccountGetEncryptionScope[get]
-        result = self.mgmt_client.encryption_scopes.get(resource_group.name, STORAGE_ACCOUNT_NAME, ENCRYPTION_SCOPE_NAME)
+        # # StorageAccountGetEncryptionScope[get]
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.encryption_scopes.get(resource_group.name, STORAGE_ACCOUNT_NAME, ENCRYPTION_SCOPE_NAME)
+        )
 
         # ListShares[get]
-        result = self.mgmt_client.file_shares.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.to_list(
+            self.mgmt_client.file_shares.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # GetBlobServices[get]
-        result = self.mgmt_client.blob_services.get_service_properties(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_services.get_service_properties(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # GetFileServices[get]
-        result = self.mgmt_client.file_services.get_service_properties(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.file_services.get_service_properties(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # StorageAccountListPrivateLinkResources[get]
-        result = self.mgmt_client.private_link_resources.list_by_storage_account(resource_group.name, STORAGE_ACCOUNT_NAME)
+        # TODO: [Kaihui] Why this `list` operation doesn't return AsyncIterable like other list operation.
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.private_link_resources.list_by_storage_account(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # StorageAccountEncryptionScopeList[get]
-        result = self.mgmt_client.encryption_scopes.list(resource_group.name, STORAGE_ACCOUNT_NAME)
-
-        # TODO: [Kaihui] feature is unavailable
-        # List object replication policy
-        # result = self.mgmt_client.object_replication_policies.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.to_list(
+            self.mgmt_client.encryption_scopes.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # ListBlobServices[get]
-        result = self.mgmt_client.blob_services.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.to_list(
+            self.mgmt_client.blob_services.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # ListFileServices[get]
-        result = self.mgmt_client.file_services.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        # TODO: [Kaihui] Why this `list` operation doesn't return AsyncIterable like other list operation.
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.file_services.list(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # StorageAccountGetProperties[get]
-        result = self.mgmt_client.storage_accounts.get_properties(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.get_properties(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # StorageAccountListByResourceGroup[get]
-        result = self.mgmt_client.storage_accounts.list_by_resource_group(resource_group.name)
+        result = self.to_list(
+            self.mgmt_client.storage_accounts.list_by_resource_group(resource_group.name)
+        )
 
         LOCATION_NAME = "westeurope"
         # UsageList[get]
-        result = self.mgmt_client.usages.list_by_location(LOCATION_NAME)
+        result = self.to_list(
+            self.mgmt_client.usages.list_by_location(LOCATION_NAME)
+        )
 
         # StorageAccountList[get]
-        result = self.mgmt_client.storage_accounts.list()
+        result = self.to_list(
+            self.mgmt_client.storage_accounts.list()
+        )
 
         # SkuList[get]
-        result = self.mgmt_client.skus.list()
+        result = self.to_list(
+            self.mgmt_client.skus.list()
+        )
 
         # OperationsList[get]
-        result = self.mgmt_client.operations.list()
+        result = self.to_list(
+            self.mgmt_client.operations.list()
+        )
 
         # SetLegalHoldContainers[post]
         BODY = {
@@ -515,7 +524,9 @@ class MgmtStorageTest(AzureMgmtTestCase):
             "tag3"
           ]
         }
-        result = self.mgmt_client.blob_containers.set_legal_hold(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.set_legal_hold(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        )
 
         # ClearLegalHoldContainers[post]
         BODY = {
@@ -525,14 +536,18 @@ class MgmtStorageTest(AzureMgmtTestCase):
             "tag3"
           ]
         }
-        result = self.mgmt_client.blob_containers.clear_legal_hold(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.clear_legal_hold(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        )
 
         # Acquire a lease on a container[post]
         BODY = {
           "action": "Acquire",
           "lease_duration": "-1"
         }
-        result = self.mgmt_client.blob_containers.lease(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.lease(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        )
         LEASE_ID = result.lease_id
 
         # Break a lease on a container[post]
@@ -540,7 +555,9 @@ class MgmtStorageTest(AzureMgmtTestCase):
           "action": "Break",
           "lease_id": LEASE_ID
         }
-        result = self.mgmt_client.blob_containers.lease(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.lease(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        )
 
         # UpdateContainers[patch]
         BODY = {
@@ -549,7 +566,9 @@ class MgmtStorageTest(AzureMgmtTestCase):
             "metadata": "true"
           }
         }
-        result = self.mgmt_client.blob_containers.update(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.update(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, BODY)
+        )
 
         # UpdateShares[patch]
         BODY = {
@@ -559,115 +578,43 @@ class MgmtStorageTest(AzureMgmtTestCase):
             }
           }
         }
-        result = self.mgmt_client.file_shares.update(resource_group.name, STORAGE_ACCOUNT_NAME, SHARE_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.file_shares.update(resource_group.name, STORAGE_ACCOUNT_NAME, SHARE_NAME, BODY)
+        )
 
-        # StorageAccountPatchEncryptionScope[patch]
-        # BODY = {
-        #   "source": "Microsoft.KeyVault",
-        #   "key_vault_properties": {
-        #     "key_uri": "https://testvault.vault.core.windows.net/keys/key1/863425f1358359c"
-        #   }
-        # }
+        # # StorageAccountPatchEncryptionScope[patch]
         BODY = {
           "source": "Microsoft.Storage",
           "state": "Enabled"
         }
-        result = self.mgmt_client.encryption_scopes.patch(resource_group.name, STORAGE_ACCOUNT_NAME, ENCRYPTION_SCOPE_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.encryption_scopes.patch(resource_group.name, STORAGE_ACCOUNT_NAME, ENCRYPTION_SCOPE_NAME, BODY)
+        )
 
         # StorageAccountRevokeUserDelegationKeys[post]
-        result = self.mgmt_client.storage_accounts.revoke_user_delegation_keys(resource_group.name, STORAGE_ACCOUNT_NAME)
-
-        # # TODO: FeatureUnavailableInLocation
-        # # # BlobRangesRestore[post]
-        # time_to_restore = (dt.datetime.now(tz=UTC()) - dt.timedelta(minutes=10)).isoformat()
-        # BODY = {
-        #   "time_to_restore": time_to_restore,
-        #   "blob_ranges": [
-        #     {
-        #       "start_range": "container/blobpath1",
-        #       "end_range": "container/blobpath2"
-        #     },
-        #     {
-        #       "start_range": "container2/blobpath3",
-        #       "end_range": ""
-        #     }
-        #   ]
-        # }
-        # result = self.mgmt_client.storage_accounts.restore_blob_ranges(resource_group.name, STORAGE_ACCOUNT_NAME, BODY["time_to_restore"], BODY["blob_ranges"])
-        # result = result.result()
-
-        # # TODO: Wrong parameters
-        # StorageAccountListServiceSAS[post]
-        # signed_expiry = (dt.datetime.now(tz=UTC()) - dt.timedelta(days=2)).isoformat()
-        # BODY = {
-        #   "canonicalized_resource": "/blob/sto1299/music",
-        #   "signed_resource": "c",
-        #   "signed_permission": "l",
-        #   "signed_expiry": signed_expiry
-        # }
-        # result = self.mgmt_client.storage_accounts.list_service_sas(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
-
-        # TODO: Wrong parameters
-        # # StorageAccountListAccountSAS[post]
-        # signed_start = dt.datetime.now(tz=UTC()).isoformat()
-        # BODY = {
-        #   "signed_services": "b",
-        #   "signed_resource_types": "s",
-        #   "signed_permission": "r",
-        #   "signed_protocol": "https,http",
-        #   "signed_start": signed_start,
-        #   "signed_expiry": signed_expiry,
-        #   "key_to_sign": "key1"
-        # }
-        # result = self.mgmt_client.storage_accounts.list_account_sas(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.revoke_user_delegation_keys(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # StorageAccountRegenerateKey[post]
         BODY = {
           "key_name": "key2"
         }
-        result = self.mgmt_client.storage_accounts.regenerate_key(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
-
-        """ TODO: Key name kerb2 is not valid.
-        # StorageAccountRegenerateKerbKey[post]
-        # BODY = {
-        #   "key_name": "kerb2"
-        # }
-        KEY_NAME = "kerb2"
-        result = self.mgmt_client.storage_accounts.regenerate_key(resource_group.name, STORAGE_ACCOUNT_NAME, KEY_NAME)
-        """
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.regenerate_key(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
+        )
 
         # StorageAccountListKeys[post]
-        result = self.mgmt_client.storage_accounts.list_keys(resource_group.name, STORAGE_ACCOUNT_NAME)
-
-        # """ TODO: FeatureUnavailableInLocation
-        # # StorageAccountEnableAD[patch]
-        # BODY = {
-        #   "azure_files_identity_based_authentication": {
-        #     "directory_service_options": "AD",
-        #     "active_directory_properties": {
-        #       "domain_name": "adtest.com",
-        #       "net_bios_domain_name": "adtest.com",
-        #       "forest_name": "adtest.com",
-        #       "domain_guid": "aebfc118-9fa9-4732-a21f-d98e41a77ae1",
-        #       "domain_sid": "S-1-5-21-2400535526-2334094090-2402026252",
-        #       "azure_storage_sid": "S-1-5-21-2400535526-2334094090-2402026252-0012"
-        #     }
-        #   }
-        # }
-        # result = self.mgmt_client.storage_accounts.update(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
-        # """
+        # Why this `list` operation doesn't return AsyncIterable like other list operation.
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.list_keys(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # StorageAccountUpdate[patch]
         BODY = {
           "network_acls": {
             "default_action": "Allow"
           },
-          # TODO: Message: Routing Preferences is not supported for the account.
-          # "routing_preference": {
-          #   "routing_choice": "MicrosoftRouting",
-          #   "publish_microsoft_endpoints": True,
-          #   "publish_internet_endpoints": True
-          # },
           "encryption": {
             "services": {
               "file": {
@@ -682,23 +629,23 @@ class MgmtStorageTest(AzureMgmtTestCase):
             "key_source": "Microsoft.Storage"
           }
         }
-        result = self.mgmt_client.storage_accounts.update(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
-
-        # StorageAccountFailover
-        # [ZIM] tis testcase fails
-        # TODO: [Kaihui] about this issue: https://github.com/Azure/azure-sdk-for-python/issues/11292
-        # result = self.mgmt_client.storage_accounts.begin_failover(resource_group.name, STORAGE_ACCOUNT_NAME)
-        #result = result.result()
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.update(resource_group.name, STORAGE_ACCOUNT_NAME, BODY)
+        )
 
         # LockImmutabilityPolicy[post]
-        result = self.mgmt_client.blob_containers.lock_immutability_policy(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, ETAG)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.lock_immutability_policy(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, ETAG)
+        )
         ETAG = result.etag
 
         # ExtendImmutabilityPolicy[post]
         BODY = {
           "immutability_period_since_creation_in_days": "100"
         }
-        result = self.mgmt_client.blob_containers.extend_immutability_policy(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, ETAG, BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.extend_immutability_policy(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME, ETAG, BODY)
+        )
         ETAG = result.etag
 
         # StorageAccountCheckNameAvailability[post]
@@ -706,26 +653,34 @@ class MgmtStorageTest(AzureMgmtTestCase):
           "name": "sto3363",
           "type": "Microsoft.Storage/storageAccounts"
         }
-        result = self.mgmt_client.storage_accounts.check_name_availability(BODY)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.check_name_availability(BODY)
+        )
 
         # DeleteContainers[delete]
-        result = self.mgmt_client.blob_containers.delete(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.blob_containers.delete(resource_group.name, STORAGE_ACCOUNT_NAME, CONTAINER_NAME)
+        )
 
         # # StorageAccountDeletePrivateEndpointConnection[delete]
-        result = self.mgmt_client.private_endpoint_connections.delete(resource_group.name, STORAGE_ACCOUNT_NAME, PRIVATE_ENDPOINT_CONNECTION_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.private_endpoint_connections.delete(resource_group.name, STORAGE_ACCOUNT_NAME, PRIVATE_ENDPOINT_CONNECTION_NAME)
+        )
 
         # DeleteShares[delete]
-        result = self.mgmt_client.file_shares.delete(resource_group.name, STORAGE_ACCOUNT_NAME, SHARE_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.file_shares.delete(resource_group.name, STORAGE_ACCOUNT_NAME, SHARE_NAME)
+        )
 
         # StorageAccountDeleteManagementPolicies[delete]
-        result = self.mgmt_client.management_policies.delete(resource_group.name, STORAGE_ACCOUNT_NAME)
-
-        # TODO: [Kaihui] feature is unavailable
-        # Delete object replication policy
-        # result = self.mgmt_client.object_replication_policies.delete(resource_group.name, STORAGE_ACCOUNT_NAME, OBJECT_REPLICATION_POLICY_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.management_policies.delete(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
         # StorageAccountDelete[delete]
-        result = self.mgmt_client.storage_accounts.delete(resource_group.name, STORAGE_ACCOUNT_NAME)
+        result = self.event_loop.run_until_complete(
+            self.mgmt_client.storage_accounts.delete(resource_group.name, STORAGE_ACCOUNT_NAME)
+        )
 
 
 #------------------------------------------------------------------------------
